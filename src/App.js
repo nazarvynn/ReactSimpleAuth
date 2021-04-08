@@ -3,51 +3,23 @@ import {
     BrowserRouter as Router,
     Switch,
     Route,
-    Link,
     Redirect,
     useHistory,
     useLocation
 } from "react-router-dom";
-
-// This example has 3 pages: a public page, a protected
-// page, and a login screen. In order to see the protected
-// page, you must first login. Pretty standard stuff.
-//
-// First, visit the public page. Then, visit the protected
-// page. You're not yet logged in, so you are redirected
-// to the login page. After you login, you are redirected
-// back to the protected page.
-//
-// Notice the URL change each time. If you click the back
-// button at this point, would you expect to go back to the
-// login page? No! You're already logged in. Try it out,
-// and you'll see you go back to the page you visited
-// just *before* logging in, the public page.
 
 export default function App() {
     return (
         <ProvideAuth>
             <Router>
                 <div>
-                    <AuthButton/>
-                    <ul>
-                        <li>
-                            <Link to="/public">Public Page</Link>
-                        </li>
-                        <li>
-                            <Link to="/protected">Protected Page</Link>
-                        </li>
-                    </ul>
-
+                    <AuthComponent/>
                     <Switch>
-                        <Route path="/public">
-                            <PublicPage/>
-                        </Route>
-                        <Route path="/login">
+                        <Route path="/auth" exact>
                             <LoginPage/>
                         </Route>
-                        <PrivateRoute path="/protected">
-                            <ProtectedPage/>
+                        <PrivateRoute path="/posts" exact>
+                            <PostsPage/>
                         </PrivateRoute>
                     </Switch>
                 </div>
@@ -56,22 +28,30 @@ export default function App() {
     );
 }
 
-const fakeAuth = {
+const AuthService = {
     isAuthenticated: false,
-    signin(cb) {
-        fakeAuth.isAuthenticated = true;
-        setTimeout(cb, 100); // fake async
+    availableUsers: [{ userName: 'admin', password: '123' }],
+    signin(authData) {
+        const user = AuthService.availableUsers.find(({ userName }) => userName === authData.userName);
+        return new Promise(function(resolve, reject) {
+            if (authData?.password === user?.password) {
+                AuthService.isAuthenticated = true;
+                resolve(user);
+            } else {
+                AuthService.isAuthenticated = false;
+                reject();
+            }
+        });
     },
-    signout(cb) {
-        fakeAuth.isAuthenticated = false;
-        setTimeout(cb, 100);
+    signout() {
+        return new Promise(function(resolve) {
+            AuthService.isAuthenticated = false;
+            resolve();
+        });
     }
 };
 
-/** For more details on
- * `authContext`, `ProvideAuth`, `useAuth` and `useProvideAuth`
- * refer to: https://usehooks.com/useAuth/
- */
+// ======
 const authContext = createContext();
 
 function ProvideAuth({children}) {
@@ -89,50 +69,27 @@ function useAuth() {
 
 function useProvideAuth() {
     const [user, setUser] = useState(null);
-
-    const signin = cb => {
-        return fakeAuth.signin(() => {
-            setUser("user");
-            cb();
+    const signin = (authData) => {
+        return AuthService.signin(authData).then((user) => {
+            setUser(user);
         });
     };
-
-    const signout = cb => {
-        return fakeAuth.signout(() => {
+    const signout = () => {
+        return AuthService.signout().then(() => {
             setUser(null);
-            cb();
         });
     };
 
-    return {
-        user,
-        signin,
-        signout
-    };
+    return { user, signin, signout };
 }
+// =======
 
-function AuthButton() {
-    let history = useHistory();
+
+function AuthComponent() {
     let auth = useAuth();
-
-    return auth.user ? (
-        <p>
-            Welcome!{" "}
-            <button
-                onClick={() => {
-                    auth.signout(() => history.push("/"));
-                }}
-            >
-                Sign out
-            </button>
-        </p>
-    ) : (
-        <p>You are not logged in.</p>
-    );
+    return !auth?.user && <Redirect to="auth" />;
 }
 
-// A wrapper for <Route> that redirects to the login
-// screen if you're not yet authenticated.
 function PrivateRoute({children, ...rest}) {
     let auth = useAuth();
     return (
@@ -144,7 +101,7 @@ function PrivateRoute({children, ...rest}) {
                 ) : (
                     <Redirect
                         to={{
-                            pathname: "/login",
+                            pathname: '/auth',
                             state: {from: location}
                         }}
                     />
@@ -154,12 +111,26 @@ function PrivateRoute({children, ...rest}) {
     );
 }
 
-function PublicPage() {
-    return <h3>Public</h3>;
-}
+function PostsPage() {
+    let history = useHistory();
+    let auth = useAuth();
 
-function ProtectedPage() {
-    return <h3>Protected</h3>;
+    return <>
+        <p>
+            Welcome! {auth.user.userName}
+            <br />
+            <button
+                onClick={() => {
+                    auth.signout().then(() => {
+                        history.push('/auth');
+                    });
+                }}
+            >
+                Sign out
+            </button>
+        </p>
+        <h1>Posts page</h1>
+        </>;
 }
 
 function LoginPage() {
@@ -167,17 +138,32 @@ function LoginPage() {
     let location = useLocation();
     let auth = useAuth();
 
-    let {from} = location.state || {from: {pathname: "/"}};
-    let login = () => {
-        auth.signin(() => {
+    let { from } = location.state || {from: { pathname: '/posts' }};
+    let login = (e) => {
+        const formData = new FormData(e.target.closest('form'));
+        const authData = {
+            userName: formData.get('userName'),
+            password: formData.get('password')
+        }
+
+        auth.signin(authData).then(() => {
             history.replace(from);
         });
     };
 
     return (
         <div>
-            <p>You must log in to view the page at {from.pathname}</p>
-            <button onClick={login}>Log in</button>
+            <p>Login</p>
+
+            <form onSubmit={(e) => e.preventDefault()}>
+                <label>User name</label>
+                <input type="text" name="userName"/>
+                <br />
+                <label>Password</label>
+                <input type="password" name="password"/>
+                <br />
+                <button onClick={login}>Login</button>
+            </form>
         </div>
     );
 }
